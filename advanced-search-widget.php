@@ -1,10 +1,10 @@
 <?php
-/*
+/**
 Plugin Name: Advanced Search Widget
 Plugin URI: http://wordpress.org/extend/plugins/advanced-search-widget
-Description: Allows you to add a widget to search custom post types along with other options
-Author: Aaron Axelsen
-Version: 0.3
+Description: Vous permet d'ajouter un widget pour rechercher parmi la taxonomie de non custom-post automobiles
+Author: Aaron Axelsen et Denis Boucher
+Version: 0.4
 Author URI: http://aaron.axelsen.us
 Text Domain: advanced-search-widget
 */
@@ -19,7 +19,7 @@ function advancedSearchWidget_getvars($getwidget) {
 	$opts = array();
 	$opts['searchtitle'] = (isset($options['searchtitle']) ? $options['searchtitle'] : '1');
 	$opts['searchcontent'] = (isset($options['searchcontent']) ? $options['searchcontent'] : '1');
-	$opts['searchtags'] = (isset($options['searchtags']) ? $options['searchtags'] : '0');
+	$opts['searchmarques'] = (isset($options['searchmarques']) ? $options['searchmarques'] : '1');
 	return $opts;
 }
 
@@ -35,7 +35,7 @@ function advancedSearchWidget_searchquery($search) {
 		if ( empty( $search ) )
 	        	return $search; // skip processing - no search term in query
 
-		$q = $wp_query->query_vars;    
+		$q = $wp_query->query_vars;   
 		$n = ! empty( $q['exact'] ) ? '' : '%';
 
 		$search = "$wpdb->posts.post_type = '".esc_attr($_GET['posttype'])."' AND ";
@@ -43,7 +43,8 @@ function advancedSearchWidget_searchquery($search) {
 
 		foreach( (array) $q['search_terms'] as $term ) {
 			$term = esc_sql( like_escape( $term ) );
-
+            $monindice = $_GET['searchmarques'];
+            
 			//push search "OR's"
 			$list = array();
 			if (isset($searchtitle) && $searchtitle == 1)
@@ -51,10 +52,9 @@ function advancedSearchWidget_searchquery($search) {
 
 			if (isset($searchcontent) && $searchcontent == 1)
 				array_push($list,"($wpdb->posts.post_content LIKE '{$n}{$term}{$n}')");
+                
+            array_push($list,"(t.name like '{$n}{$term}{$n}' AND post_status = 'publish' and tt.taxonomy in ('post_tag', '{$monindice}'))");
 
-			if (isset($searchtags) && $searchtags == 1)
-				array_push($list,"(t.name like '{$n}{$term}{$n}' AND post_status = 'publish' and tt.taxonomy in ('post_tag', 'category'))");
-	
 			$search .= "{$searchand}";
 			$search .= "( ";
 			$search .= implode(" OR ",$list);
@@ -77,7 +77,7 @@ function advancedSearchWidget_searchjoin($join) {
                 if (isset($_GET['widget'])) {
                         extract(advancedSearchWidget_getvars($_GET['widget']));
 
-			if (isset($searchtags) && $searchtags == 1) {
+			if (isset($searchmarques)) {
 				global $table_prefix, $wpdb;
 				$tabletags = $table_prefix . "terms";
 				$tablepost2tag = $table_prefix . "term_relationships";
@@ -96,7 +96,7 @@ function advancedSearchWidget_searchgroupby($groupby) {
                 if (isset($_GET['widget'])) {
                         extract(advancedSearchWidget_getvars($_GET['widget']));
 
-                        if (isset($searchtags) && $searchtags == 1) {
+                        if (isset($searchmarques)) {
 				global $wpdb;
 
 				// we need to group on post ID
@@ -169,10 +169,11 @@ class Advanced_Search_Widget extends WP_Widget {
 		if ( ! empty( $title ) )
 			echo $before_title . $title . $after_title;
 	        $form = '<form role="search" method="get" id="'.$widget_id.'-searchform" action="' . esc_url( home_url( '/' ) ) . '" >
-        	<div class="widget_search"><label class="screen-reader-text" for="'.$widget_id.'-s">' . __('Search for:') . '</label>
+        	<div class="widget_search"><label class="screen-reader-text" for="'.$widget_id.'-s">' . __('<h3>'.$instance['searchmarques'].'</h3>') . '</label>
 	        <input type="text" value="" name="s" id="'.$widget_id.'-s" />
-		<input type="hidden" name="posttype" value="' .$instance['posttype']. '" />
-		<input type="hidden" name="widget" value="' .$widget_id. '" />
+            <input type="hidden" name="posttype" value="' .$instance['posttype']. '" />
+            <input type="hidden" name="searchmarques" value="' .$instance['searchmarques']. '" />
+            <input type="hidden" name="widget" value="' .$widget_id. '" />
         	<input type="submit" id="'.$widget_id.'-searchsubmit" value="'. esc_attr__('Search') .'" />
 	        </div>
         	</form>';
@@ -194,9 +195,10 @@ class Advanced_Search_Widget extends WP_Widget {
 		$instance = array();
 		$instance['title'] = strip_tags( $new_instance['title'] );
 		$instance['posttype'] = strip_tags( $new_instance['posttype'] );
+        $instance['searchmarques'] = strip_tags( $new_instance['searchmarques'] );
 		$instance['searchtitle'] = (empty($new_instance['searchtitle']) ? '0' : strip_tags( $new_instance['searchtitle'] ));
 		$instance['searchcontent'] = (empty($new_instance['searchcontent']) ? '0' : strip_tags( $new_instance['searchcontent'] ));
-		$instance['searchtags'] = (empty($new_instance['searchtags']) ? '0' : strip_tags( $new_instance['searchtags'] ));
+		
 		return $instance;
 	}
 
@@ -224,12 +226,13 @@ class Advanced_Search_Widget extends WP_Widget {
 		} else {
 			$searchcontent = ' checked="checked"';
 		}
-		if (isset($instance['searchtags'])) {
-			$searchtags = ($instance['searchtags'] == 1 ? ' checked="checked"' : '');
+		if (isset($instance['searchmarques'])) {
+			$searchmarques = ($instance['searchmarques'] == 1 ? ' checked="checked"' : '');
 		} else {
-			$searchtags = '';
+			$searchmarques = '';
 		}
-
+        
+        $categories = get_taxonomies();
 		$custom_post_types = get_post_types( array('exclude_from_search' => false) );	
 		#array_unshift($custom_post_types,'any');
 		?>
@@ -246,7 +249,18 @@ class Advanced_Search_Widget extends WP_Widget {
 			}?>
 		</select>
 		</p>
-		<p><?php _e('Search using the following fields:','advanced-search-widget'); ?></p>
+ 		<p><label for="<?php echo $this->get_field_id( 'searchmarques' ); ?>"><?php _e( 'Taxonomy:' ); ?></label>
+		<select class='widefat' id="<?php echo $this->get_field_id( 'searchmarques' ); ?>" name="<?php echo $this->get_field_name( 'searchmarques' ); ?>">
+            <?php foreach($categories as $category){
+                if ($category== 'marques' or $category== 'modeles' or $category== 'annees' or $category== 'types' or $category== 'options' or $category== 'pneus'){
+                    $selected = '';
+                    if (isset($instance['searchmarques']) && $instance['searchmarques'] == $category) $selected = ' selected="selected"';
+                    echo "<option{$selected}>$category</option>";
+                }
+            }?>
+		</select>
+		</p>
+		<p><?php _e('Rechercher en utilisant les champs suivants:','advanced-search-widget'); ?></p>
 		<p>
 		<input id="<?php echo $this->get_field_id( 'searchtitle' ); ?>" name="<?php echo $this->get_field_name( 'searchtitle' ); ?>"<?php echo $searchtitle; ?> type="checkbox" value="1" />
 		<label for="<?php echo $this->get_field_id( 'searchtitle' ); ?>"><?php _e( 'Title' ); ?></label> 
@@ -255,11 +269,7 @@ class Advanced_Search_Widget extends WP_Widget {
 		<input id="<?php echo $this->get_field_id( 'searchcontent' ); ?>" name="<?php echo $this->get_field_name( 'searchcontent' ); ?>"<?php echo $searchcontent; ?> type="checkbox" value="1" />
 		<label for="<?php echo $this->get_field_id( 'searchcontent' ); ?>"><?php _e( 'Content' ); ?></label> 
 		</p>
-		<p>
-		<input id="<?php echo $this->get_field_id( 'searchtags' ); ?>" name="<?php echo $this->get_field_name( 'searchtags' ); ?>"<?php echo $searchtags; ?> type="checkbox" value="1" />
-		<label for="<?php echo $this->get_field_id( 'searchtags' ); ?>"><?php _e( 'Tags' ); ?></label> 
-		</p>
-		<?php 
+		<?php
 	}
 
 } // class Foo_Widget
